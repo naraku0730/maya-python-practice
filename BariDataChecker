@@ -1,0 +1,35 @@
+import maya.cmds as cmds
+
+class SceneChecker:
+    def __init__(self):
+        self.default_prefixes = ["pSphere","pCube","pCylinder","pPlane","pTorus","pCone"]
+        self.objects = []
+    def check_default_names(self):
+        self.objects = cmds.ls(type="transform")
+        problems = []
+        for prefix in self.default_prefixes:
+            for object in self.objects:
+                if object.startswith(prefix):
+                    problems.append(object)
+        return problems
+        
+def show_window():
+    checker = SceneChecker()
+    problems = checker.check_default_names()
+    
+    ToolName = "BariDataChecker"
+    if cmds.window(ToolName,exists=True):
+        cmds.deleteUI(ToolName)
+        
+    window = cmds.window(ToolName,title="バリデータチェッカー",widthHeight=(300,500))
+    cmds.columnLayout(adjustableColumn=True)
+    if problems:
+        cmds.text(label=f"初期名のオブジェクトが{len(problems)}件あります")
+        for name in problems:
+            cmds.text(label=f"初期名のオブジェクト：{name}")
+    else:
+        cmds.text(label="問題のあるオブジェクト名は見つかりませんでした")
+            
+    cmds.showWindow(window)
+    
+show_window()
