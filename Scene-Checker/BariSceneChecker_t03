@@ -1,0 +1,181 @@
+import maya.cmds as cmds
+import maya.api.OpenMaya as om
+
+
+class SceneChecker:
+    def __init__(self):
+        self.default_prefixes = ["pSphere","pCube","pCylinder","pCone","pPlane","pTorus","pPrism","pPyramid","pPipe","pHelix","pSolid","pDisc","pGear","pSuperShape",]
+        self.objects = []
+        
+    def check_default_name(self):
+        problem = []
+        self.objects = cmds.ls(type="transform")
+        for obj in self.objects:
+            for prefix in self.default_prefixes:
+                if obj.startswith(prefix):
+                    problem.append(obj)
+        return problem
+
+    def shene_origin(self):
+        problem=[]
+        self.objects = cmds.ls(type="transform")
+        for obj in self.objects:
+            shapes = cmds.listRelatives(obj,shapes=True)
+            if shapes and cmds.nodeType(shapes[0])=="camera":
+                continue
+            obj_form = cmds.xform(obj,query=True,translation=True,worldSpace=True)
+            if abs(obj_form[0])>0.001 or abs(obj_form[1])>0.001 or abs(obj_form[2])>0.001:
+                problem.append(obj)
+        return problem
+
+    def check_polygon_count(self,limit):
+        objects = cmds.ls(type="transform")
+        all_count = 0
+        for obj in objects:
+            shapes = cmds.listRelatives(obj,shapes=True)
+            if shapes and cmds.nodeType(shapes[0])=="mesh":
+                count = cmds.polyEvaluate(obj,face=True)
+                all_count += count
+        if limit>=all_count:
+            return (f"仕様内：{all_count}（上限{limit}）")
+        else:
+            return (f"ポリゴン数超過：{all_count}(上限{limit})")
+
+    def check_ngon(self,mesh_name):
+        problem=[]
+        sel = om.MSelectionList()
+        sel.add(mesh_name)
+        dag_path = sel.getDagPath(0)
+        poly_iter = om.MItMeshPolygon(dag_path)
+    
+        while not poly_iter.isDone():
+            ind = poly_iter.index()
+            if poly_iter.polygonVertexCount()>4:
+                problem.append(ind)
+            poly_iter.next() 
+        return problem
+
+    def check_meshes(self):
+        prodic = {}
+        meshes = cmds.ls(type="transform")
+        for obj in meshes:
+            shapes = cmds.listRelatives(obj,shapes=True)
+            if shapes and cmds.nodeType(shapes[0])=="mesh":
+                problem = self.check_ngon(shapes[0])
+                if problem:
+                    prodic[shapes[0]]=problem
+        return prodic
+        
+            #仮ネーム凹面検出
+    def check_concave_objects(self):
+        mesh_names = []
+        meshes = cmds.ls(type="transform")
+        for obj in meshes:
+            shapes = cmds.listRelatives(obj,shapes=True)
+            if shapes and cmds.nodeType(shapes[0])=="mesh": 
+                mesh_names.append(shapes[0])       
+        prodic = self.check_concave(mesh_names)
+        return prodic
+    def check_concave(self,mesh_names):
+        prodic = {}
+        
+        for name in mesh_names:
+            sel = om.MSelectionList()
+            problem = []
+            sel.add(name)
+            dag_path = sel.getDagPath(0)
+            poly_iter = om.MItMeshPolygon(dag_path)
+            
+            while not poly_iter.isDone():
+                ind = poly_iter.index()
+                if not poly_iter.isConvex():
+                    problem.append(ind)
+                poly_iter.next() 
+            if problem:
+                prodic[name]=problem
+        return prodic
+        
+    def check_lamina_objects(self):
+        mesh_names = []
+        objects = cmds.ls(type="transform")
+        for obj in objects:
+            shapes = cmds.listRelatives(obj,shapes=True)
+            if shapes and cmds.nodeType(shapes[0])=="mesh":
+                mesh_names.append(shapes[0])
+        prodic = self.check_lamina(mesh_names)
+        return prodic
+
+    def check_lamina(self,mesh_names):
+        prodic = {}
+
+        for name in mesh_names:
+            sel = om.MSelectionList()
+            problem = []
+            sel.add(name)
+            dag_path = sel.getDagPath(0)
+            poly_iter = om.MItMeshPolygon(dag_path)
+
+            while not poly_iter.isDone():
+                ind = poly_iter.index()
+                if poly_iter.isLamina():
+                    problem.append(ind)
+                poly_iter.next()
+            if problem:
+                prodic[name] = problem
+        return prodic
+        
+    
+        
+def show_ui():
+    global field,checker
+    Window_ID="sceneCheckerWin"
+    if cmds.window(Window_ID,exists=True):
+        cmds.deleteUI(Window_ID)
+
+    checker = SceneChecker()
+    
+    cmds.window(Window_ID,title="SceneChecker",widthHeight=(300,400))
+
+    cmds.columnLayout(adjustableColumn=True)
+
+    cmds.button(label="初期名チェック",command=run_default_name_check)
+    cmds.button(label="原点ずれチェック",command=run_shene_origin)
+    cmds.button(label="Ngonチェック",command=run_check_meshes)
+    cmds.button(label="凹面検出ツール",command=run_check_concave)
+    field = cmds.textField()
+    cmds.button(label="ポリゴン数チェック",command=run_check_polygon_count)
+    cmds.button(label="ラミナ面チェック",command=run_check_lamina)
+
+    cmds.showWindow(Window_ID)
+
+def run_default_name_check(*args):
+    result = checker.check_default_name()
+    print("初期名の検出：",result)
+
+def run_shene_origin(*args):
+    result = checker.shene_origin()
+    print("原点の検出：",result)
+    
+def run_check_meshes(*args):
+    result = checker.check_meshes()
+    print("Ngonの検出：",result)
+
+def run_check_polygon_count(*args):
+    field_in = cmds.textField(field,query = True,text = True)
+    try:
+        count = int(field_in)
+    except:
+        print("有効な数字を入力してください",field)
+        return
+    result = checker.check_polygon_count(count)
+    print("ポリゴン数：",result)
+    
+def run_check_concave(*args):
+    result = checker.check_concave_objects()
+    print("凹面の検出：",result)
+    
+def run_check_lamina(*args):
+    result = checker.check_lamina_objects()
+    print("ラミナ面の検出：",result)
+
+show_ui()
